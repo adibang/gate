@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Manager - MUDA POS</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        body {
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #006B54;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 15px;
+            font-size: 1rem;
+        }
+        button {
+            background: #006B54;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button.secondary {
+            background: #6c757d;
+        }
+        .user-item {
+            background: #f9f9f9;
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .user-info {
+            flex: 1;
+        }
+        .user-info strong {
+            color: #006B54;
+        }
+        .user-actions button {
+            width: auto;
+            margin-left: 5px;
+            padding: 6px 12px;
+            font-size: 0.9rem;
+        }
+        .user-actions .edit {
+            background: #ffc107;
+            color: #333;
+        }
+        .user-actions .delete {
+            background: #dc3545;
+        }
+        hr {
+            margin: 20px 0;
+            border: 0;
+            border-top: 1px solid #eee;
+        }
+        #editFormContainer {
+            display: none;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Manajemen User Lokal</h1>
+
+        <!-- Form Tambah User -->
+        <form id="addUserForm">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password" required>
+            </div>
+            <div class="form-group">
+                <label>Nama</label>
+                <input type="text" id="name" required>
+            </div>
+            <div class="form-group">
+                <label>Role</label>
+                <select id="role">
+                    <option value="admin">Admin (Akses penuh)</option>
+                    <option value="viewer">Viewer (Hanya lihat)</option>
+                </select>
+            </div>
+            <button type="submit">Tambah User</button>
+        </form>
+
+        <hr>
+
+        <!-- Daftar User -->
+        <h2>Daftar User</h2>
+        <div id="userList"></div>
+
+        <!-- Form Edit (disembunyikan) -->
+        <div id="editFormContainer">
+            <h3>Edit User</h3>
+            <form id="editUserForm">
+                <input type="hidden" id="editId">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="editUsername" required>
+                </div>
+                <div class="form-group">
+                    <label>Password (biarkan kosong jika tidak diubah)</label>
+                    <input type="password" id="editPassword">
+                </div>
+                <div class="form-group">
+                    <label>Nama</label>
+                    <input type="text" id="editName" required>
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="editRole">
+                        <option value="admin">Admin</option>
+                        <option value="viewer">Viewer</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="secondary" style="flex:1;">Simpan</button>
+                    <button type="button" onclick="cancelEdit()" style="flex:1; background:#999;">Batal</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ==================== KONFIGURASI DATABASE ====================
+        const DB_NAME = 'MudaPOSDB';
+        const DB_VERSION = 1;
+        const STORE_LOCAL_USERS = 'localUsers';
+
+        let db = null;
+
+        // Inisialisasi database
+        async function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = (e) => {
+                    db = e.target.result;
+                    resolve();
+                };
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_LOCAL_USERS)) {
+                        const store = db.createObjectStore(STORE_LOCAL_USERS, { keyPath: 'id', autoIncrement: true });
+                        store.createIndex('username', 'username', { unique: true });
+                    }
+                };
+            });
+        }
+
+        // Fungsi hash (sama dengan yang akan digunakan di halaman laporan)
+        async function hashPassword(password) {
+            if (window.crypto && window.crypto.subtle) {
+                try {
+                    const encoder = new TextEncoder();
+                    const data = encoder.encode(password);
+                    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                    const hashArray = Array.from(new Uint8Array(hashBuffer));
+                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                } catch (e) { console.warn('Crypto digest failed, using fallback', e); }
+            }
+            let hash = 0;
+            for (let i = 0; i < password.length; i++) {
+                const char = password.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash |= 0;
+            }
+            return hash.toString(16);
+        }
+
+        // Fungsi CRUD
+        async function getAllUsers() {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction([STORE_LOCAL_USERS], 'readonly');
+                const store = tx.objectStore(STORE_LOCAL_USERS);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function addUser(user) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction([STORE_LOCAL_USERS], 'readwrite');
+                const store = tx.objectStore(STORE_LOCAL_USERS);
+                const request = store.add(user);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function updateUser(user) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction([STORE_LOCAL_USERS], 'readwrite');
+                const store = tx.objectStore(STORE_LOCAL_USERS);
+                const request = store.put(user);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function deleteUser(id) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction([STORE_LOCAL_USERS], 'readwrite');
+                const store = tx.objectStore(STORE_LOCAL_USERS);
+                const request = store.delete(id);
+                request.onsuccess = () => resolve();
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        // ==================== UI FUNCTIONS ====================
+        async function renderUserList() {
+            const users = await getAllUsers();
+            const listDiv = document.getElementById('userList');
+            if (users.length === 0) {
+                listDiv.innerHTML = '<p style="text-align:center; color:#999;">Belum ada user.</p>';
+                return;
+            }
+            let html = '';
+            users.forEach(u => {
+                html += `
+                    <div class="user-item">
+                        <div class="user-info">
+                            <strong>${u.name}</strong> (@${u.username})<br>
+                            Role: ${u.role} | Dibuat: ${new Date(u.createdAt).toLocaleDateString()}
+                        </div>
+                        <div class="user-actions">
+                            <button class="edit" onclick="editUser(${u.id})">Edit</button>
+                            <button class="delete" onclick="deleteUserPrompt(${u.id})">Hapus</button>
+                        </div>
+                    </div>
+                `;
+            });
+            listDiv.innerHTML = html;
+        }
+
+        document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const name = document.getElementById('name').value.trim();
+            const role = document.getElementById('role').value;
+
+            if (!username || !password || !name) {
+                alert('Semua field harus diisi');
+                return;
+            }
+
+            try {
+                const hashed = await hashPassword(password);
+                const now = new Date().toISOString();
+                const user = {
+                    username,
+                    password: hashed,
+                    name,
+                    role,
+                    createdAt: now,
+                    updatedAt: now
+                };
+                await addUser(user);
+                document.getElementById('addUserForm').reset();
+                await renderUserList();
+                alert('User ditambahkan');
+            } catch (error) {
+                if (error.name === 'ConstraintError') {
+                    alert('Username sudah digunakan');
+                } else {
+                    alert('Gagal: ' + error.message);
+                }
+            }
+        });
+
+        window.editUser = async (id) => {
+            const users = await getAllUsers();
+            const user = users.find(u => u.id === id);
+            if (!user) return;
+
+            document.getElementById('editId').value = user.id;
+            document.getElementById('editUsername').value = user.username;
+            document.getElementById('editName').value = user.name;
+            document.getElementById('editRole').value = user.role;
+            document.getElementById('editPassword').value = '';
+
+            document.getElementById('editFormContainer').style.display = 'block';
+        };
+
+        document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = parseInt(document.getElementById('editId').value);
+            const username = document.getElementById('editUsername').value.trim();
+            const password = document.getElementById('editPassword').value;
+            const name = document.getElementById('editName').value.trim();
+            const role = document.getElementById('editRole').value;
+
+            if (!username || !name) {
+                alert('Username dan nama harus diisi');
+                return;
+            }
+
+            try {
+                const users = await getAllUsers();
+                const user = users.find(u => u.id === id);
+                if (!user) return;
+
+                user.username = username;
+                user.name = name;
+                user.role = role;
+                if (password.trim() !== '') {
+                    user.password = await hashPassword(password);
+                }
+                user.updatedAt = new Date().toISOString();
+
+                await updateUser(user);
+                cancelEdit();
+                await renderUserList();
+                alert('User diperbarui');
+            } catch (error) {
+                alert('Gagal: ' + error.message);
+            }
+        });
+
+        window.deleteUserPrompt = async (id) => {
+            if (confirm('Yakin hapus user ini?')) {
+                try {
+                    await deleteUser(id);
+                    await renderUserList();
+                } catch (error) {
+                    alert('Gagal: ' + error.message);
+                }
+            }
+        };
+
+        function cancelEdit() {
+            document.getElementById('editFormContainer').style.display = 'none';
+        }
+
+        // Inisialisasi
+        (async () => {
+            await initDB();
+            await renderUserList();
+        })();
+    </script>
+</body>
+</html>
