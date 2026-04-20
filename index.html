@@ -1,240 +1,10 @@
-<!-- ini adalah app kedua (modifikasi) -->
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Manager - MUDA POS (Firestore)</title>
-    <!-- Firebase SDK -->
-    <script type="module">
-        // Konfigurasi Firebase (salin dari file firebase-config.js proyek Anda)
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { 
-            getFirestore, collection, doc, setDoc, getDocs, deleteDoc, 
-            query, orderBy, onSnapshot 
-        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-        import { 
-            getAuth, signInAnonymously, onAuthStateChanged 
-        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-        // Ganti dengan konfigurasi Firebase Anda
-        const firebaseConfig = {
-            apiKey: "AIzaSyDVty30S6y_qc1eMs3kVctcIpLt6Suw4dA",
-            authDomain: "mudapos-e8a4a.firebaseapp.com",
-            projectId: "mudapos-e8a4a",
-            storageBucket: "mudapos-e8a4a.firebasestorage.app",
-            messagingSenderId: "864215339664",
-            appId: "1:864215339664:web:1a97898b85ca3c1cb3be15"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        // Login anonim agar bisa menulis ke Firestore (sesuaikan aturan keamanan)
-        async function ensureAuth() {
-            return new Promise((resolve) => {
-                onAuthStateChanged(auth, async (user) => {
-                    if (!user) {
-                        await signInAnonymously(auth);
-                    }
-                    resolve();
-                });
-            });
-        }
-
-        // Fungsi hash password (sama dengan di app utama)
-        async function hashPassword(password) {
-            if (window.crypto && window.crypto.subtle) {
-                try {
-                    const encoder = new TextEncoder();
-                    const data = encoder.encode(password);
-                    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-                    const hashArray = Array.from(new Uint8Array(hashBuffer));
-                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-                } catch (e) { console.warn('Crypto digest failed, using fallback', e); }
-            }
-            let hash = 0;
-            for (let i = 0; i < password.length; i++) {
-                const char = password.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash |= 0;
-            }
-            return hash.toString(16);
-        }
-
-        // Koleksi Firestore
-        const usersCollection = collection(db, 'localUsers');
-
-        // Fungsi CRUD Firestore
-        async function getAllUsers() {
-            const q = query(usersCollection, orderBy('createdAt', 'desc'));
-            const snapshot = await getDocs(q);
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        }
-
-        async function addUser(user) {
-            const docRef = doc(usersCollection, user.username); // username sebagai ID
-            await setDoc(docRef, user);
-        }
-
-        async function updateUser(user) {
-            const docRef = doc(usersCollection, user.username);
-            await setDoc(docRef, user, { merge: true });
-        }
-
-        async function deleteUser(username) {
-            const docRef = doc(usersCollection, username);
-            await deleteDoc(docRef);
-        }
-
-        // UI functions (sebagian besar sama, hanya ganti panggilan ke Firestore)
-        async function renderUserList() {
-            const users = await getAllUsers();
-            const listDiv = document.getElementById('userList');
-            if (users.length === 0) {
-                listDiv.innerHTML = '<p style="text-align:center; color:#999;">Belum ada user.</p>';
-                return;
-            }
-            let html = '';
-            users.forEach(u => {
-                html += `
-                    <div class="user-item">
-                        <div class="user-info">
-                            <strong>${u.name}</strong> (@${u.username})<br>
-                            Role: ${u.role} | Dibuat: ${new Date(u.createdAt).toLocaleDateString()}
-                        </div>
-                        <div class="user-actions">
-                            <button class="edit" onclick="editUser('${u.username}')">Edit</button>
-                            <button class="delete" onclick="deleteUserPrompt('${u.username}')">Hapus</button>
-                        </div>
-                    </div>
-                `;
-            });
-            listDiv.innerHTML = html;
-        }
-
-        // Inisialisasi saat halaman dimuat
-        window.addEventListener('DOMContentLoaded', async () => {
-            await ensureAuth(); // login anonim (opsional, jika aturan Firestore memerlukan auth)
-
-            // Form tambah user
-            document.getElementById('addUserForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const username = document.getElementById('username').value.trim();
-                const password = document.getElementById('password').value;
-                const name = document.getElementById('name').value.trim();
-                const role = document.getElementById('role').value;
-
-                if (!username || !password || !name) {
-                    alert('Semua field harus diisi');
-                    return;
-                }
-
-                try {
-                    const hashed = await hashPassword(password);
-                    const now = new Date().toISOString();
-                    const user = {
-                        username,
-                        password: hashed,
-                        name,
-                        role,
-                        createdAt: now,
-                        updatedAt: now
-                    };
-                    await addUser(user);
-                    document.getElementById('addUserForm').reset();
-                    await renderUserList();
-                    alert('User ditambahkan');
-                } catch (error) {
-                    alert('Gagal: ' + error.message);
-                }
-            });
-
-            // Edit user
-            window.editUser = async (username) => {
-                const users = await getAllUsers();
-                const user = users.find(u => u.username === username);
-                if (!user) return;
-
-                document.getElementById('editId').value = user.username; // kita simpan username, bukan id
-                document.getElementById('editUsername').value = user.username;
-                document.getElementById('editName').value = user.name;
-                document.getElementById('editRole').value = user.role;
-                document.getElementById('editPassword').value = '';
-
-                document.getElementById('editFormContainer').style.display = 'block';
-            };
-
-            document.getElementById('editUserForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const originalUsername = document.getElementById('editId').value;
-                const newUsername = document.getElementById('editUsername').value.trim();
-                const password = document.getElementById('editPassword').value;
-                const name = document.getElementById('editName').value.trim();
-                const role = document.getElementById('editRole').value;
-
-                if (!newUsername || !name) {
-                    alert('Username dan nama harus diisi');
-                    return;
-                }
-
-                try {
-                    const users = await getAllUsers();
-                    const user = users.find(u => u.username === originalUsername);
-                    if (!user) return;
-
-                    const updatedData = {
-                        username: newUsername,
-                        name,
-                        role,
-                        updatedAt: new Date().toISOString()
-                    };
-                    if (password.trim() !== '') {
-                        updatedData.password = await hashPassword(password);
-                    }
-
-                    // Jika username berubah, kita perlu membuat dokumen baru dan hapus yang lama
-                    if (originalUsername !== newUsername) {
-                        await deleteUser(originalUsername);
-                        await addUser({ ...user, ...updatedData, createdAt: user.createdAt });
-                    } else {
-                        await updateUser({ ...user, ...updatedData });
-                    }
-
-                    cancelEdit();
-                    await renderUserList();
-                    alert('User diperbarui');
-                } catch (error) {
-                    alert('Gagal: ' + error.message);
-                }
-            });
-
-            window.deleteUserPrompt = async (username) => {
-                if (confirm('Yakin hapus user ini?')) {
-                    try {
-                        await deleteUser(username);
-                        await renderUserList();
-                    } catch (error) {
-                        alert('Gagal: ' + error.message);
-                    }
-                }
-            };
-
-            window.cancelEdit = () => {
-                document.getElementById('editFormContainer').style.display = 'none';
-            };
-
-            // Real-time listener (opsional, bisa juga tanpa)
-            onSnapshot(usersCollection, () => {
-                renderUserList();
-            });
-
-            await renderUserList();
-        });
-    </script>
     <style>
-        /* CSS sama persis dengan sebelumnya */
         * { margin:0; padding:0; box-sizing:border-box; font-family:system-ui, -apple-system, sans-serif; }
         body { background:#f5f5f5; padding:20px; }
         .container { max-width:600px; margin:0 auto; background:white; border-radius:20px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
@@ -252,11 +22,20 @@
         .user-actions .delete { background:#dc3545; }
         hr { margin:20px 0; border:0; border-top:1px solid #eee; }
         #editFormContainer { display:none; margin-top:20px; padding-top:20px; border-top:1px solid #eee; }
+        .status-bar { margin-top:10px; padding:8px; background:#e8f0fe; border-radius:10px; font-size:0.9rem; display:flex; align-items:center; gap:8px; }
+        .spinner { width:16px; height:16px; border:2px solid #006B54; border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; }
+        @keyframes spin { to { transform:rotate(360deg); } }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Manajemen User Lokal (Firestore)</h1>
+        <h1>👥 Manajemen User Lokal</h1>
+        
+        <!-- Status Koneksi Firestore -->
+        <div id="connectionStatus" class="status-bar">
+            <span id="statusIcon">🟡</span>
+            <span id="statusText">Menghubungkan ke server...</span>
+        </div>
 
         <!-- Form Tambah User -->
         <form id="addUserForm">
@@ -297,7 +76,7 @@
                     <input type="text" id="editUsername" required>
                 </div>
                 <div class="form-group">
-                    <label>Password (biarkan kosong jika tidak diubah)</label>
+                    <label>Password (kosongkan jika tidak diubah)</label>
                     <input type="password" id="editPassword">
                 </div>
                 <div class="form-group">
@@ -318,5 +97,282 @@
             </form>
         </div>
     </div>
+
+    <script type="module">
+        // Konfigurasi Firebase - GANTI DENGAN KONFIGURASI ANDA
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { 
+            getFirestore, collection, doc, setDoc, getDocs, deleteDoc, 
+            query, orderBy, onSnapshot, enableIndexedDbPersistence 
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { 
+            getAuth, signInAnonymously, onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            // GANTI DENGAN KONFIGURASI ANDA
+            apiKey: "AIzaSyDVty30S6y_qc1eMs3kVctcIpLt6Suw4dA",
+            authDomain: "mudapos-e8a4a.firebaseapp.com",
+            projectId: "mudapos-e8a4a",
+            storageBucket: "mudapos-e8a4a.firebasestorage.app",
+            messagingSenderId: "864215339664",
+            appId: "1:864215339664:web:1a97898b85ca3c1cb3be15"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Aktifkan offline persistence (opsional)
+        enableIndexedDbPersistence(db).catch((err) => {
+            if (err.code == 'failed-precondition') {
+                console.warn('Persistence gagal: multiple tabs open');
+            }
+        });
+
+        // Status UI
+        const statusIcon = document.getElementById('statusIcon');
+        const statusText = document.getElementById('statusText');
+
+        function updateStatus(connected, message = '') {
+            if (connected) {
+                statusIcon.textContent = '🟢';
+                statusText.textContent = message || 'Terhubung ke server';
+            } else {
+                statusIcon.textContent = '🔴';
+                statusText.textContent = message || 'Tidak terhubung';
+            }
+        }
+
+        // Login anonim agar bisa menulis (jika aturan Firestore membutuhkan auth)
+        async function ensureAuth() {
+            return new Promise((resolve) => {
+                const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                    if (!user) {
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (e) {
+                            console.warn('Gagal login anonim:', e);
+                        }
+                    }
+                    resolve(user);
+                    unsubscribe();
+                });
+            });
+        }
+
+        // Fungsi hash password (sama dengan app utama)
+        async function hashPassword(password) {
+            if (window.crypto && window.crypto.subtle) {
+                try {
+                    const encoder = new TextEncoder();
+                    const data = encoder.encode(password);
+                    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                    const hashArray = Array.from(new Uint8Array(hashBuffer));
+                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                } catch (e) {}
+            }
+            let hash = 0;
+            for (let i = 0; i < password.length; i++) {
+                const char = password.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash |= 0;
+            }
+            return hash.toString(16);
+        }
+
+        const usersCollection = collection(db, 'localUsers');
+
+        // CRUD Firestore
+        async function getAllUsers() {
+            const q = query(usersCollection, orderBy('createdAt', 'desc'));
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+
+        async function addUser(user) {
+            const docRef = doc(usersCollection, user.username);
+            await setDoc(docRef, user);
+        }
+
+        async function updateUser(user) {
+            const docRef = doc(usersCollection, user.username);
+            await setDoc(docRef, user, { merge: true });
+        }
+
+        async function deleteUser(username) {
+            const docRef = doc(usersCollection, username);
+            await deleteDoc(docRef);
+        }
+
+        // UI Functions
+        async function renderUserList(users) {
+            const listDiv = document.getElementById('userList');
+            if (!users) users = await getAllUsers();
+            
+            if (users.length === 0) {
+                listDiv.innerHTML = '<p style="text-align:center; color:#999;">Belum ada user.</p>';
+                return;
+            }
+            let html = '';
+            users.forEach(u => {
+                html += `
+                    <div class="user-item">
+                        <div class="user-info">
+                            <strong>${u.name}</strong> (@${u.username})<br>
+                            Role: ${u.role} | Dibuat: ${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}
+                        </div>
+                        <div class="user-actions">
+                            <button class="edit" data-username="${u.username}">Edit</button>
+                            <button class="delete" data-username="${u.username}">Hapus</button>
+                        </div>
+                    </div>
+                `;
+            });
+            listDiv.innerHTML = html;
+            
+            // Pasang event listener untuk tombol edit & delete
+            document.querySelectorAll('.edit').forEach(btn => {
+                btn.addEventListener('click', () => editUser(btn.dataset.username));
+            });
+            document.querySelectorAll('.delete').forEach(btn => {
+                btn.addEventListener('click', () => deleteUserPrompt(btn.dataset.username));
+            });
+        }
+
+        async function editUser(username) {
+            const users = await getAllUsers();
+            const user = users.find(u => u.username === username);
+            if (!user) return;
+
+            document.getElementById('editId').value = user.username;
+            document.getElementById('editUsername').value = user.username;
+            document.getElementById('editName').value = user.name;
+            document.getElementById('editRole').value = user.role;
+            document.getElementById('editPassword').value = '';
+
+            document.getElementById('editFormContainer').style.display = 'block';
+        }
+
+        function cancelEdit() {
+            document.getElementById('editFormContainer').style.display = 'none';
+        }
+
+        async function deleteUserPrompt(username) {
+            if (confirm(`Yakin hapus user "${username}"?`)) {
+                try {
+                    await deleteUser(username);
+                } catch (error) {
+                    alert('Gagal menghapus: ' + error.message);
+                }
+            }
+        }
+
+        // Inisialisasi
+        window.addEventListener('DOMContentLoaded', async () => {
+            await ensureAuth();
+            
+            // Setup realtime listener untuk koneksi (opsional)
+            const connectedRef = collection(db, '_dummy_');
+            // Firestore tidak memiliki built-in connection status, kita pakai onSnapshot untuk mendeteksi
+            
+            // Real-time listener untuk daftar user
+            const q = query(usersCollection, orderBy('createdAt', 'desc'));
+            onSnapshot(q, (snapshot) => {
+                updateStatus(true);
+                const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderUserList(users);
+            }, (error) => {
+                console.error('Listener error:', error);
+                updateStatus(false, 'Gagal terhubung: ' + error.message);
+                // Fallback: ambil data sekali
+                getAllUsers().then(users => renderUserList(users));
+            });
+
+            // Form tambah
+            document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value;
+                const name = document.getElementById('name').value.trim();
+                const role = document.getElementById('role').value;
+
+                if (!username || !password || !name) {
+                    alert('Semua field harus diisi');
+                    return;
+                }
+
+                try {
+                    const hashed = await hashPassword(password);
+                    const now = new Date().toISOString();
+                    const user = {
+                        username,
+                        password: hashed,
+                        name,
+                        role,
+                        createdAt: now,
+                        updatedAt: now
+                    };
+                    await addUser(user);
+                    document.getElementById('addUserForm').reset();
+                } catch (error) {
+                    if (error.code === 'already-exists' || error.message.includes('already exists')) {
+                        alert('Username sudah digunakan');
+                    } else {
+                        alert('Gagal menambah user: ' + error.message);
+                    }
+                }
+            });
+
+            // Form edit
+            document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const originalUsername = document.getElementById('editId').value;
+                const newUsername = document.getElementById('editUsername').value.trim();
+                const password = document.getElementById('editPassword').value;
+                const name = document.getElementById('editName').value.trim();
+                const role = document.getElementById('editRole').value;
+
+                if (!newUsername || !name) {
+                    alert('Username dan nama harus diisi');
+                    return;
+                }
+
+                try {
+                    const users = await getAllUsers();
+                    const user = users.find(u => u.username === originalUsername);
+                    if (!user) throw new Error('User tidak ditemukan');
+
+                    const updatedData = {
+                        username: newUsername,
+                        name,
+                        role,
+                        updatedAt: new Date().toISOString()
+                    };
+                    if (password.trim() !== '') {
+                        updatedData.password = await hashPassword(password);
+                    }
+
+                    if (originalUsername !== newUsername) {
+                        // Hapus dokumen lama, buat baru
+                        await deleteUser(originalUsername);
+                        await addUser({ 
+                            ...user, 
+                            ...updatedData, 
+                            createdAt: user.createdAt 
+                        });
+                    } else {
+                        await updateUser({ ...user, ...updatedData });
+                    }
+
+                    cancelEdit();
+                } catch (error) {
+                    alert('Gagal update: ' + error.message);
+                }
+            });
+
+            window.cancelEdit = cancelEdit;
+        });
+    </script>
 </body>
 </html>
