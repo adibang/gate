@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Manager - MUDA POS (Firestore)</title>
+    <title>User Manager - MUDA POS</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; font-family:system-ui, -apple-system, sans-serif; }
         body { background:#f5f5f5; padding:20px; }
         .container { max-width:600px; margin:0 auto; background:white; border-radius:20px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color:#006B54; margin-bottom:20px; font-size:1.5rem; }
+        h1 { color:#006B54; margin-bottom:20px; font-size:1.5rem; display:flex; align-items:center; gap:10px; }
+        .user-badge { display:flex; align-items:center; gap:5px; margin-left:auto; font-size:0.9rem; background:#e6f0ec; padding:5px 12px; border-radius:30px; }
+        .btn-login { background:#006B54; color:white; border:none; padding:8px 16px; border-radius:20px; cursor:pointer; }
         .form-group { margin-bottom:15px; }
         label { display:block; font-weight:600; margin-bottom:5px; }
         input, select { width:100%; padding:10px; border:1px solid #ddd; border-radius:15px; font-size:1rem; }
@@ -22,79 +24,87 @@
         .user-actions .delete { background:#dc3545; }
         hr { margin:20px 0; border:0; border-top:1px solid #eee; }
         #editFormContainer { display:none; margin-top:20px; padding-top:20px; border-top:1px solid #eee; }
-        .status-bar { margin-top:10px; padding:8px; background:#e8f0fe; border-radius:10px; font-size:0.9rem; display:flex; align-items:center; gap:8px; }
-        .spinner { width:16px; height:16px; border:2px solid #006B54; border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite; }
-        @keyframes spin { to { transform:rotate(360deg); } }
+        .error-message { color:#dc3545; margin:10px 0; display:none; }
+        #loginSection { text-align:center; padding:20px; }
+        #mainApp { display:none; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>👥 Manajemen User Lokal</h1>
-        
-        <!-- Status Koneksi Firestore -->
-        <div id="connectionStatus" class="status-bar">
-            <span id="statusIcon">🟡</span>
-            <span id="statusText">Menghubungkan ke server...</span>
+        <h1>
+            👥 Manajemen User Lokal
+            <span id="userBadge" class="user-badge" style="display:none;"></span>
+            <button id="loginBtn" class="btn-login">Login Google</button>
+        </h1>
+
+        <!-- Tampilan jika belum login -->
+        <div id="loginSection">
+            <p style="margin-bottom:20px;">Silakan login dengan akun Google (admin) untuk mengelola user.</p>
+            <button id="loginBtnLarge" class="btn-login" style="width:auto; padding:12px 24px;">🔐 Login dengan Google</button>
         </div>
 
-        <!-- Form Tambah User -->
-        <form id="addUserForm">
-            <div class="form-group">
-                <label>Username</label>
-                <input type="text" id="username" required>
-            </div>
-            <div class="form-group">
-                <label>Password</label>
-                <input type="password" id="password" required>
-            </div>
-            <div class="form-group">
-                <label>Nama</label>
-                <input type="text" id="name" required>
-            </div>
-            <div class="form-group">
-                <label>Role</label>
-                <select id="role">
-                    <option value="admin">Admin (Akses penuh)</option>
-                    <option value="viewer">Viewer (Hanya lihat)</option>
-                </select>
-            </div>
-            <button type="submit">Tambah User</button>
-        </form>
-
-        <hr>
-
-        <h2>Daftar User</h2>
-        <div id="userList"></div>
-
-        <!-- Form Edit (disembunyikan) -->
-        <div id="editFormContainer">
-            <h3>Edit User</h3>
-            <form id="editUserForm">
-                <input type="hidden" id="editId">
+        <!-- Tampilan utama setelah login -->
+        <div id="mainApp">
+            <!-- Form Tambah User -->
+            <form id="addUserForm">
                 <div class="form-group">
                     <label>Username</label>
-                    <input type="text" id="editUsername" required>
+                    <input type="text" id="username" required>
                 </div>
                 <div class="form-group">
-                    <label>Password (kosongkan jika tidak diubah)</label>
-                    <input type="password" id="editPassword">
+                    <label>Password</label>
+                    <input type="password" id="password" required>
                 </div>
                 <div class="form-group">
                     <label>Nama</label>
-                    <input type="text" id="editName" required>
+                    <input type="text" id="name" required>
                 </div>
                 <div class="form-group">
                     <label>Role</label>
-                    <select id="editRole">
-                        <option value="admin">Admin</option>
-                        <option value="viewer">Viewer</option>
+                    <select id="role">
+                        <option value="admin">Admin (Akses penuh)</option>
+                        <option value="viewer">Viewer (Hanya lihat)</option>
                     </select>
                 </div>
-                <div style="display: flex; gap: 10px;">
-                    <button type="submit" class="secondary" style="flex:1;">Simpan</button>
-                    <button type="button" onclick="cancelEdit()" style="flex:1; background:#999;">Batal</button>
-                </div>
+                <div id="formError" class="error-message"></div>
+                <button type="submit">Tambah User</button>
             </form>
+
+            <hr>
+
+            <h2>Daftar User</h2>
+            <div id="userList"></div>
+
+            <!-- Form Edit (disembunyikan) -->
+            <div id="editFormContainer">
+                <h3>Edit User</h3>
+                <form id="editUserForm">
+                    <input type="hidden" id="editId">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="editUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password (biarkan kosong jika tidak diubah)</label>
+                        <input type="password" id="editPassword">
+                    </div>
+                    <div class="form-group">
+                        <label>Nama</label>
+                        <input type="text" id="editName" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="editRole">
+                            <option value="admin">Admin</option>
+                            <option value="viewer">Viewer</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" class="secondary" style="flex:1;">Simpan</button>
+                        <button type="button" onclick="cancelEdit()" style="flex:1; background:#999;">Batal</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -103,65 +113,41 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { 
             getFirestore, collection, doc, setDoc, getDocs, deleteDoc, 
-            query, orderBy, onSnapshot, enableIndexedDbPersistence 
+            query, orderBy, onSnapshot 
         } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { 
-            getAuth, signInAnonymously, onAuthStateChanged 
+            getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged 
         } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
-            // GANTI DENGAN KONFIGURASI ANDA
-            apiKey: "AIzaSyDVty30S6y_qc1eMs3kVctcIpLt6Suw4dA",
-            authDomain: "mudapos-e8a4a.firebaseapp.com",
-            projectId: "mudapos-e8a4a",
-            storageBucket: "mudapos-e8a4a.firebasestorage.app",
-            messagingSenderId: "864215339664",
-            appId: "1:864215339664:web:1a97898b85ca3c1cb3be15"
+            // PASTIKAN KONFIGURASI SAMA DENGAN APP UTAMA
+            apiKey: "AIzaSy...",
+            authDomain: "...",
+            projectId: "...",
+            storageBucket: "...",
+            messagingSenderId: "...",
+            appId: "..."
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
 
-        // Aktifkan offline persistence (opsional)
-        enableIndexedDbPersistence(db).catch((err) => {
-            if (err.code == 'failed-precondition') {
-                console.warn('Persistence gagal: multiple tabs open');
-            }
-        });
+        // UI Elements
+        const loginSection = document.getElementById('loginSection');
+        const mainApp = document.getElementById('mainApp');
+        const userBadge = document.getElementById('userBadge');
+        const loginBtn = document.getElementById('loginBtn');
+        const loginBtnLarge = document.getElementById('loginBtnLarge');
+        const formError = document.getElementById('formError');
+        
+        // State
+        let currentUser = null;
+        let usersCollection = collection(db, 'localUsers');
+        let unsubscribe = null;
 
-        // Status UI
-        const statusIcon = document.getElementById('statusIcon');
-        const statusText = document.getElementById('statusText');
-
-        function updateStatus(connected, message = '') {
-            if (connected) {
-                statusIcon.textContent = '🟢';
-                statusText.textContent = message || 'Terhubung ke server';
-            } else {
-                statusIcon.textContent = '🔴';
-                statusText.textContent = message || 'Tidak terhubung';
-            }
-        }
-
-        // Login anonim agar bisa menulis (jika aturan Firestore membutuhkan auth)
-        async function ensureAuth() {
-            return new Promise((resolve) => {
-                const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                    if (!user) {
-                        try {
-                            await signInAnonymously(auth);
-                        } catch (e) {
-                            console.warn('Gagal login anonim:', e);
-                        }
-                    }
-                    resolve(user);
-                    unsubscribe();
-                });
-            });
-        }
-
-        // Fungsi hash password (sama dengan app utama)
+        // ========== HASH PASSWORD ==========
         async function hashPassword(password) {
             if (window.crypto && window.crypto.subtle) {
                 try {
@@ -181,9 +167,7 @@
             return hash.toString(16);
         }
 
-        const usersCollection = collection(db, 'localUsers');
-
-        // CRUD Firestore
+        // ========== FUNGSI CRUD ==========
         async function getAllUsers() {
             const q = query(usersCollection, orderBy('createdAt', 'desc'));
             const snapshot = await getDocs(q);
@@ -205,7 +189,13 @@
             await deleteDoc(docRef);
         }
 
-        // UI Functions
+        // ========== UI FUNCTIONS ==========
+        function showError(message) {
+            formError.textContent = message;
+            formError.style.display = 'block';
+            setTimeout(() => formError.style.display = 'none', 5000);
+        }
+
         async function renderUserList(users) {
             const listDiv = document.getElementById('userList');
             if (!users) users = await getAllUsers();
@@ -231,7 +221,6 @@
             });
             listDiv.innerHTML = html;
             
-            // Pasang event listener untuk tombol edit & delete
             document.querySelectorAll('.edit').forEach(btn => {
                 btn.addEventListener('click', () => editUser(btn.dataset.username));
             });
@@ -254,9 +243,9 @@
             document.getElementById('editFormContainer').style.display = 'block';
         }
 
-        function cancelEdit() {
+        window.cancelEdit = function() {
             document.getElementById('editFormContainer').style.display = 'none';
-        }
+        };
 
         async function deleteUserPrompt(username) {
             if (confirm(`Yakin hapus user "${username}"?`)) {
@@ -268,111 +257,151 @@
             }
         }
 
-        // Inisialisasi
-        window.addEventListener('DOMContentLoaded', async () => {
-            await ensureAuth();
-            
-            // Setup realtime listener untuk koneksi (opsional)
-            const connectedRef = collection(db, '_dummy_');
-            // Firestore tidak memiliki built-in connection status, kita pakai onSnapshot untuk mendeteksi
-            
-            // Real-time listener untuk daftar user
-            const q = query(usersCollection, orderBy('createdAt', 'desc'));
-            onSnapshot(q, (snapshot) => {
-                updateStatus(true);
-                const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderUserList(users);
-            }, (error) => {
-                console.error('Listener error:', error);
-                updateStatus(false, 'Gagal terhubung: ' + error.message);
-                // Fallback: ambil data sekali
-                getAllUsers().then(users => renderUserList(users));
-            });
-
-            // Form tambah
-            document.getElementById('addUserForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const username = document.getElementById('username').value.trim();
-                const password = document.getElementById('password').value;
-                const name = document.getElementById('name').value.trim();
-                const role = document.getElementById('role').value;
-
-                if (!username || !password || !name) {
-                    alert('Semua field harus diisi');
-                    return;
+        // ========== AUTH ==========
+        function updateUIForAuth(user) {
+            currentUser = user;
+            if (user) {
+                loginSection.style.display = 'none';
+                mainApp.style.display = 'block';
+                userBadge.style.display = 'flex';
+                userBadge.innerHTML = `👤 ${user.displayName || user.email}`;
+                loginBtn.textContent = 'Logout';
+                
+                // Mulai real-time listener
+                if (unsubscribe) unsubscribe();
+                const q = query(usersCollection, orderBy('createdAt', 'desc'));
+                unsubscribe = onSnapshot(q, (snapshot) => {
+                    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderUserList(users);
+                }, (error) => {
+                    console.error('Listener error:', error);
+                    showError('Gagal memuat data: ' + error.message);
+                });
+            } else {
+                loginSection.style.display = 'block';
+                mainApp.style.display = 'none';
+                userBadge.style.display = 'none';
+                loginBtn.textContent = 'Login Google';
+                if (unsubscribe) {
+                    unsubscribe();
+                    unsubscribe = null;
                 }
+            }
+        }
 
-                try {
-                    const hashed = await hashPassword(password);
-                    const now = new Date().toISOString();
-                    const user = {
-                        username,
-                        password: hashed,
-                        name,
-                        role,
-                        createdAt: now,
-                        updatedAt: now
-                    };
-                    await addUser(user);
-                    document.getElementById('addUserForm').reset();
-                } catch (error) {
-                    if (error.code === 'already-exists' || error.message.includes('already exists')) {
-                        alert('Username sudah digunakan');
-                    } else {
-                        alert('Gagal menambah user: ' + error.message);
-                    }
-                }
-            });
+        async function handleLogin() {
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                alert('Login gagal: ' + error.message);
+            }
+        }
 
-            // Form edit
-            document.getElementById('editUserForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const originalUsername = document.getElementById('editId').value;
-                const newUsername = document.getElementById('editUsername').value.trim();
-                const password = document.getElementById('editPassword').value;
-                const name = document.getElementById('editName').value.trim();
-                const role = document.getElementById('editRole').value;
+        async function handleLogout() {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                alert('Logout gagal: ' + error.message);
+            }
+        }
 
-                if (!newUsername || !name) {
-                    alert('Username dan nama harus diisi');
-                    return;
-                }
-
-                try {
-                    const users = await getAllUsers();
-                    const user = users.find(u => u.username === originalUsername);
-                    if (!user) throw new Error('User tidak ditemukan');
-
-                    const updatedData = {
-                        username: newUsername,
-                        name,
-                        role,
-                        updatedAt: new Date().toISOString()
-                    };
-                    if (password.trim() !== '') {
-                        updatedData.password = await hashPassword(password);
-                    }
-
-                    if (originalUsername !== newUsername) {
-                        // Hapus dokumen lama, buat baru
-                        await deleteUser(originalUsername);
-                        await addUser({ 
-                            ...user, 
-                            ...updatedData, 
-                            createdAt: user.createdAt 
-                        });
-                    } else {
-                        await updateUser({ ...user, ...updatedData });
-                    }
-
-                    cancelEdit();
-                } catch (error) {
-                    alert('Gagal update: ' + error.message);
-                }
-            });
-
-            window.cancelEdit = cancelEdit;
+        // Event listeners
+        loginBtn.addEventListener('click', () => {
+            if (currentUser) handleLogout();
+            else handleLogin();
         });
+        loginBtnLarge.addEventListener('click', handleLogin);
+
+        onAuthStateChanged(auth, (user) => {
+            updateUIForAuth(user);
+        });
+
+        // ========== FORM SUBMIT ==========
+        document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const name = document.getElementById('name').value.trim();
+            const role = document.getElementById('role').value;
+
+            if (!username || !password || !name) {
+                showError('Semua field harus diisi');
+                return;
+            }
+
+            try {
+                const hashed = await hashPassword(password);
+                const now = new Date().toISOString();
+                const user = {
+                    username,
+                    password: hashed,
+                    name,
+                    role,
+                    createdAt: now,
+                    updatedAt: now
+                };
+                await addUser(user);
+                document.getElementById('addUserForm').reset();
+                formError.style.display = 'none';
+            } catch (error) {
+                if (error.code === 'already-exists') {
+                    showError('Username sudah digunakan');
+                } else if (error.code === 'permission-denied') {
+                    showError('Anda tidak memiliki izin untuk menambah user. Pastikan Anda login sebagai admin.');
+                } else {
+                    showError('Gagal: ' + error.message);
+                }
+            }
+        });
+
+        document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const originalUsername = document.getElementById('editId').value;
+            const newUsername = document.getElementById('editUsername').value.trim();
+            const password = document.getElementById('editPassword').value;
+            const name = document.getElementById('editName').value.trim();
+            const role = document.getElementById('editRole').value;
+
+            if (!newUsername || !name) {
+                alert('Username dan nama harus diisi');
+                return;
+            }
+
+            try {
+                const users = await getAllUsers();
+                const user = users.find(u => u.username === originalUsername);
+                if (!user) throw new Error('User tidak ditemukan');
+
+                const updatedData = {
+                    username: newUsername,
+                    name,
+                    role,
+                    updatedAt: new Date().toISOString()
+                };
+                if (password.trim() !== '') {
+                    updatedData.password = await hashPassword(password);
+                }
+
+                if (originalUsername !== newUsername) {
+                    // Hapus dokumen lama, buat baru
+                    await deleteUser(originalUsername);
+                    await addUser({ 
+                        ...user, 
+                        ...updatedData, 
+                        createdAt: user.createdAt 
+                    });
+                } else {
+                    await updateUser({ ...user, ...updatedData });
+                }
+
+                cancelEdit();
+            } catch (error) {
+                alert('Gagal update: ' + error.message);
+            }
+        });
+
+        // Inisialisasi tampilan awal
+        updateUIForAuth(auth.currentUser);
     </script>
 </body>
 </html>
