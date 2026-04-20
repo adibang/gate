@@ -1,107 +1,262 @@
-<!-- ini adalah app kedua-->
+<!-- ini adalah app kedua (modifikasi) -->
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Manager - MUDA POS</title>
+    <title>User Manager - MUDA POS (Firestore)</title>
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Konfigurasi Firebase (salin dari file firebase-config.js proyek Anda)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { 
+            getFirestore, collection, doc, setDoc, getDocs, deleteDoc, 
+            query, orderBy, onSnapshot 
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { 
+            getAuth, signInAnonymously, onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+        // Ganti dengan konfigurasi Firebase Anda
+        const firebaseConfig = {
+            apiKey: "AIzaSyDVty30S6y_qc1eMs3kVctcIpLt6Suw4dA",
+            authDomain: "mudapos-e8a4a.firebaseapp.com",
+            projectId: "mudapos-e8a4a",
+            storageBucket: "mudapos-e8a4a.firebasestorage.app",
+            messagingSenderId: "864215339664",
+            appId: "1:864215339664:web:1a97898b85ca3c1cb3be15"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Login anonim agar bisa menulis ke Firestore (sesuaikan aturan keamanan)
+        async function ensureAuth() {
+            return new Promise((resolve) => {
+                onAuthStateChanged(auth, async (user) => {
+                    if (!user) {
+                        await signInAnonymously(auth);
+                    }
+                    resolve();
+                });
+            });
+        }
+
+        // Fungsi hash password (sama dengan di app utama)
+        async function hashPassword(password) {
+            if (window.crypto && window.crypto.subtle) {
+                try {
+                    const encoder = new TextEncoder();
+                    const data = encoder.encode(password);
+                    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                    const hashArray = Array.from(new Uint8Array(hashBuffer));
+                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                } catch (e) { console.warn('Crypto digest failed, using fallback', e); }
+            }
+            let hash = 0;
+            for (let i = 0; i < password.length; i++) {
+                const char = password.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash |= 0;
+            }
+            return hash.toString(16);
+        }
+
+        // Koleksi Firestore
+        const usersCollection = collection(db, 'localUsers');
+
+        // Fungsi CRUD Firestore
+        async function getAllUsers() {
+            const q = query(usersCollection, orderBy('createdAt', 'desc'));
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+
+        async function addUser(user) {
+            const docRef = doc(usersCollection, user.username); // username sebagai ID
+            await setDoc(docRef, user);
+        }
+
+        async function updateUser(user) {
+            const docRef = doc(usersCollection, user.username);
+            await setDoc(docRef, user, { merge: true });
+        }
+
+        async function deleteUser(username) {
+            const docRef = doc(usersCollection, username);
+            await deleteDoc(docRef);
+        }
+
+        // UI functions (sebagian besar sama, hanya ganti panggilan ke Firestore)
+        async function renderUserList() {
+            const users = await getAllUsers();
+            const listDiv = document.getElementById('userList');
+            if (users.length === 0) {
+                listDiv.innerHTML = '<p style="text-align:center; color:#999;">Belum ada user.</p>';
+                return;
+            }
+            let html = '';
+            users.forEach(u => {
+                html += `
+                    <div class="user-item">
+                        <div class="user-info">
+                            <strong>${u.name}</strong> (@${u.username})<br>
+                            Role: ${u.role} | Dibuat: ${new Date(u.createdAt).toLocaleDateString()}
+                        </div>
+                        <div class="user-actions">
+                            <button class="edit" onclick="editUser('${u.username}')">Edit</button>
+                            <button class="delete" onclick="deleteUserPrompt('${u.username}')">Hapus</button>
+                        </div>
+                    </div>
+                `;
+            });
+            listDiv.innerHTML = html;
+        }
+
+        // Inisialisasi saat halaman dimuat
+        window.addEventListener('DOMContentLoaded', async () => {
+            await ensureAuth(); // login anonim (opsional, jika aturan Firestore memerlukan auth)
+
+            // Form tambah user
+            document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value;
+                const name = document.getElementById('name').value.trim();
+                const role = document.getElementById('role').value;
+
+                if (!username || !password || !name) {
+                    alert('Semua field harus diisi');
+                    return;
+                }
+
+                try {
+                    const hashed = await hashPassword(password);
+                    const now = new Date().toISOString();
+                    const user = {
+                        username,
+                        password: hashed,
+                        name,
+                        role,
+                        createdAt: now,
+                        updatedAt: now
+                    };
+                    await addUser(user);
+                    document.getElementById('addUserForm').reset();
+                    await renderUserList();
+                    alert('User ditambahkan');
+                } catch (error) {
+                    alert('Gagal: ' + error.message);
+                }
+            });
+
+            // Edit user
+            window.editUser = async (username) => {
+                const users = await getAllUsers();
+                const user = users.find(u => u.username === username);
+                if (!user) return;
+
+                document.getElementById('editId').value = user.username; // kita simpan username, bukan id
+                document.getElementById('editUsername').value = user.username;
+                document.getElementById('editName').value = user.name;
+                document.getElementById('editRole').value = user.role;
+                document.getElementById('editPassword').value = '';
+
+                document.getElementById('editFormContainer').style.display = 'block';
+            };
+
+            document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const originalUsername = document.getElementById('editId').value;
+                const newUsername = document.getElementById('editUsername').value.trim();
+                const password = document.getElementById('editPassword').value;
+                const name = document.getElementById('editName').value.trim();
+                const role = document.getElementById('editRole').value;
+
+                if (!newUsername || !name) {
+                    alert('Username dan nama harus diisi');
+                    return;
+                }
+
+                try {
+                    const users = await getAllUsers();
+                    const user = users.find(u => u.username === originalUsername);
+                    if (!user) return;
+
+                    const updatedData = {
+                        username: newUsername,
+                        name,
+                        role,
+                        updatedAt: new Date().toISOString()
+                    };
+                    if (password.trim() !== '') {
+                        updatedData.password = await hashPassword(password);
+                    }
+
+                    // Jika username berubah, kita perlu membuat dokumen baru dan hapus yang lama
+                    if (originalUsername !== newUsername) {
+                        await deleteUser(originalUsername);
+                        await addUser({ ...user, ...updatedData, createdAt: user.createdAt });
+                    } else {
+                        await updateUser({ ...user, ...updatedData });
+                    }
+
+                    cancelEdit();
+                    await renderUserList();
+                    alert('User diperbarui');
+                } catch (error) {
+                    alert('Gagal: ' + error.message);
+                }
+            });
+
+            window.deleteUserPrompt = async (username) => {
+                if (confirm('Yakin hapus user ini?')) {
+                    try {
+                        await deleteUser(username);
+                        await renderUserList();
+                    } catch (error) {
+                        alert('Gagal: ' + error.message);
+                    }
+                }
+            };
+
+            window.cancelEdit = () => {
+                document.getElementById('editFormContainer').style.display = 'none';
+            };
+
+            // Real-time listener (opsional, bisa juga tanpa)
+            onSnapshot(usersCollection, () => {
+                renderUserList();
+            });
+
+            await renderUserList();
+        });
+    </script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: system-ui, -apple-system, sans-serif;
-        }
-        body {
-            background: #f5f5f5;
-            padding: 20px;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #006B54;
-            margin-bottom: 20px;
-            font-size: 1.5rem;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-        input, select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 15px;
-            font-size: 1rem;
-        }
-        button {
-            background: #006B54;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 10px;
-        }
-        button.secondary {
-            background: #6c757d;
-        }
-        .user-item {
-            background: #f9f9f9;
-            border-radius: 15px;
-            padding: 15px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .user-info {
-            flex: 1;
-        }
-        .user-info strong {
-            color: #006B54;
-        }
-        .user-actions button {
-            width: auto;
-            margin-left: 5px;
-            padding: 6px 12px;
-            font-size: 0.9rem;
-        }
-        .user-actions .edit {
-            background: #ffc107;
-            color: #333;
-        }
-        .user-actions .delete {
-            background: #dc3545;
-        }
-        hr {
-            margin: 20px 0;
-            border: 0;
-            border-top: 1px solid #eee;
-        }
-        #editFormContainer {
-            display: none;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-        }
+        /* CSS sama persis dengan sebelumnya */
+        * { margin:0; padding:0; box-sizing:border-box; font-family:system-ui, -apple-system, sans-serif; }
+        body { background:#f5f5f5; padding:20px; }
+        .container { max-width:600px; margin:0 auto; background:white; border-radius:20px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color:#006B54; margin-bottom:20px; font-size:1.5rem; }
+        .form-group { margin-bottom:15px; }
+        label { display:block; font-weight:600; margin-bottom:5px; }
+        input, select { width:100%; padding:10px; border:1px solid #ddd; border-radius:15px; font-size:1rem; }
+        button { background:#006B54; color:white; border:none; padding:12px 20px; border-radius:15px; font-weight:600; cursor:pointer; width:100%; margin-top:10px; }
+        button.secondary { background:#6c757d; }
+        .user-item { background:#f9f9f9; border-radius:15px; padding:15px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; }
+        .user-info { flex:1; }
+        .user-info strong { color:#006B54; }
+        .user-actions button { width:auto; margin-left:5px; padding:6px 12px; font-size:0.9rem; }
+        .user-actions .edit { background:#ffc107; color:#333; }
+        .user-actions .delete { background:#dc3545; }
+        hr { margin:20px 0; border:0; border-top:1px solid #eee; }
+        #editFormContainer { display:none; margin-top:20px; padding-top:20px; border-top:1px solid #eee; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Manajemen User Lokal</h1>
+        <h1>Manajemen User Lokal (Firestore)</h1>
 
         <!-- Form Tambah User -->
         <form id="addUserForm">
@@ -129,7 +284,6 @@
 
         <hr>
 
-        <!-- Daftar User -->
         <h2>Daftar User</h2>
         <div id="userList"></div>
 
@@ -164,226 +318,5 @@
             </form>
         </div>
     </div>
-
-    <script>
-        // ==================== KONFIGURASI DATABASE ====================
-        const DB_NAME = 'MudaPOSDB';
-        const DB_VERSION = 1;
-        const STORE_LOCAL_USERS = 'localUsers';
-
-        let db = null;
-
-        // Inisialisasi database
-        async function initDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
-                request.onerror = () => reject(request.error);
-                request.onsuccess = (e) => {
-                    db = e.target.result;
-                    resolve();
-                };
-                request.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains(STORE_LOCAL_USERS)) {
-                        const store = db.createObjectStore(STORE_LOCAL_USERS, { keyPath: 'id', autoIncrement: true });
-                        store.createIndex('username', 'username', { unique: true });
-                    }
-                };
-            });
-        }
-
-        // Fungsi hash (sama dengan yang akan digunakan di halaman laporan)
-        async function hashPassword(password) {
-            if (window.crypto && window.crypto.subtle) {
-                try {
-                    const encoder = new TextEncoder();
-                    const data = encoder.encode(password);
-                    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-                    const hashArray = Array.from(new Uint8Array(hashBuffer));
-                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-                } catch (e) { console.warn('Crypto digest failed, using fallback', e); }
-            }
-            let hash = 0;
-            for (let i = 0; i < password.length; i++) {
-                const char = password.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash |= 0;
-            }
-            return hash.toString(16);
-        }
-
-        // Fungsi CRUD
-        async function getAllUsers() {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction([STORE_LOCAL_USERS], 'readonly');
-                const store = tx.objectStore(STORE_LOCAL_USERS);
-                const request = store.getAll();
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = (e) => reject(e.target.error);
-            });
-        }
-
-        async function addUser(user) {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction([STORE_LOCAL_USERS], 'readwrite');
-                const store = tx.objectStore(STORE_LOCAL_USERS);
-                const request = store.add(user);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = (e) => reject(e.target.error);
-            });
-        }
-
-        async function updateUser(user) {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction([STORE_LOCAL_USERS], 'readwrite');
-                const store = tx.objectStore(STORE_LOCAL_USERS);
-                const request = store.put(user);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = (e) => reject(e.target.error);
-            });
-        }
-
-        async function deleteUser(id) {
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction([STORE_LOCAL_USERS], 'readwrite');
-                const store = tx.objectStore(STORE_LOCAL_USERS);
-                const request = store.delete(id);
-                request.onsuccess = () => resolve();
-                request.onerror = (e) => reject(e.target.error);
-            });
-        }
-
-        // ==================== UI FUNCTIONS ====================
-        async function renderUserList() {
-            const users = await getAllUsers();
-            const listDiv = document.getElementById('userList');
-            if (users.length === 0) {
-                listDiv.innerHTML = '<p style="text-align:center; color:#999;">Belum ada user.</p>';
-                return;
-            }
-            let html = '';
-            users.forEach(u => {
-                html += `
-                    <div class="user-item">
-                        <div class="user-info">
-                            <strong>${u.name}</strong> (@${u.username})<br>
-                            Role: ${u.role} | Dibuat: ${new Date(u.createdAt).toLocaleDateString()}
-                        </div>
-                        <div class="user-actions">
-                            <button class="edit" onclick="editUser(${u.id})">Edit</button>
-                            <button class="delete" onclick="deleteUserPrompt(${u.id})">Hapus</button>
-                        </div>
-                    </div>
-                `;
-            });
-            listDiv.innerHTML = html;
-        }
-
-        document.getElementById('addUserForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            const name = document.getElementById('name').value.trim();
-            const role = document.getElementById('role').value;
-
-            if (!username || !password || !name) {
-                alert('Semua field harus diisi');
-                return;
-            }
-
-            try {
-                const hashed = await hashPassword(password);
-                const now = new Date().toISOString();
-                const user = {
-                    username,
-                    password: hashed,
-                    name,
-                    role,
-                    createdAt: now,
-                    updatedAt: now
-                };
-                await addUser(user);
-                document.getElementById('addUserForm').reset();
-                await renderUserList();
-                alert('User ditambahkan');
-            } catch (error) {
-                if (error.name === 'ConstraintError') {
-                    alert('Username sudah digunakan');
-                } else {
-                    alert('Gagal: ' + error.message);
-                }
-            }
-        });
-
-        window.editUser = async (id) => {
-            const users = await getAllUsers();
-            const user = users.find(u => u.id === id);
-            if (!user) return;
-
-            document.getElementById('editId').value = user.id;
-            document.getElementById('editUsername').value = user.username;
-            document.getElementById('editName').value = user.name;
-            document.getElementById('editRole').value = user.role;
-            document.getElementById('editPassword').value = '';
-
-            document.getElementById('editFormContainer').style.display = 'block';
-        };
-
-        document.getElementById('editUserForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = parseInt(document.getElementById('editId').value);
-            const username = document.getElementById('editUsername').value.trim();
-            const password = document.getElementById('editPassword').value;
-            const name = document.getElementById('editName').value.trim();
-            const role = document.getElementById('editRole').value;
-
-            if (!username || !name) {
-                alert('Username dan nama harus diisi');
-                return;
-            }
-
-            try {
-                const users = await getAllUsers();
-                const user = users.find(u => u.id === id);
-                if (!user) return;
-
-                user.username = username;
-                user.name = name;
-                user.role = role;
-                if (password.trim() !== '') {
-                    user.password = await hashPassword(password);
-                }
-                user.updatedAt = new Date().toISOString();
-
-                await updateUser(user);
-                cancelEdit();
-                await renderUserList();
-                alert('User diperbarui');
-            } catch (error) {
-                alert('Gagal: ' + error.message);
-            }
-        });
-
-        window.deleteUserPrompt = async (id) => {
-            if (confirm('Yakin hapus user ini?')) {
-                try {
-                    await deleteUser(id);
-                    await renderUserList();
-                } catch (error) {
-                    alert('Gagal: ' + error.message);
-                }
-            }
-        };
-
-        function cancelEdit() {
-            document.getElementById('editFormContainer').style.display = 'none';
-        }
-
-        // Inisialisasi
-        (async () => {
-            await initDB();
-            await renderUserList();
-        })();
-    </script>
 </body>
 </html>
