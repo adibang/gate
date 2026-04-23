@@ -3,14 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Manager - MUDA POS</title>
+    <title>Gate - Manajemen User Lokal</title>
+    <!-- Feather Icons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- CSS Eksternal -->
+    <link rel="stylesheet" href="css/sidebar.css">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; font-family:system-ui, -apple-system, sans-serif; }
-        body { background:#f5f5f5; padding:20px; }
-        .container { max-width:600px; margin:0 auto; background:white; border-radius:20px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
+        body { background:#f5f5f5; padding:20px; font-size:14px; }
+        .header { display:flex; justify-content:space-between; align-items:center; padding:0.6rem 1.5rem; background:white; box-shadow:0 2px 4px rgba(0,0,0,0.05); position:sticky; top:0; z-index:100; margin-bottom:20px; }
+        .menu-toggle { background:none; border:none; cursor:pointer; color:#006B54; padding:0.4rem; border-radius:6px; }
+        .menu-toggle:hover { background:#f0f0f0; }
+        .btn-login { background:#006B54; color:white; border:none; padding:0.4rem 1rem; border-radius:6px; font-weight:500; cursor:pointer; display:flex; align-items:center; gap:0.4rem; font-size:0.9rem; }
+        .overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:150; display:none; }
+        .overlay.active { display:block; }
+        .container { max-width:800px; margin:0 auto; background:white; border-radius:20px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
         h1 { color:#006B54; margin-bottom:20px; font-size:1.5rem; display:flex; align-items:center; gap:10px; }
         .user-badge { display:flex; align-items:center; gap:5px; margin-left:auto; font-size:0.9rem; background:#e6f0ec; padding:5px 12px; border-radius:30px; }
-        .btn-login { background:#006B54; color:white; border:none; padding:8px 16px; border-radius:20px; cursor:pointer; }
         .form-group { margin-bottom:15px; }
         label { display:block; font-weight:600; margin-bottom:5px; }
         input, select { width:100%; padding:10px; border:1px solid #ddd; border-radius:15px; font-size:1rem; }
@@ -27,29 +36,50 @@
         .error-message { color:#dc3545; margin:10px 0; display:none; }
         #loginSection { text-align:center; padding:20px; }
         #mainApp { display:none; }
-        .warning-box { background:#fff3cd; border:1px solid #ffeeba; color:#856404; padding:12px; border-radius:10px; margin-bottom:20px; }
+        .role-badge { 
+            padding:2px 8px; border-radius:12px; font-size:0.8rem; font-weight:600; text-transform:uppercase; 
+            background:#e6f0ec; color:#006B54;
+        }
+        .role-badge.admin { background:#006B54; color:white; }
+        .role-badge.kasir { background:#ffc107; color:#333; }
     </style>
 </head>
 <body>
+    <!-- Overlay -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- Sidebar akan di-render oleh sidebar.js -->
+    <aside id="sidebar" class="sidebar"></aside>
+
+    <!-- Header dengan menu toggle -->
+    <header class="header">
+        <div class="header-left">
+            <button class="menu-toggle" id="menuToggle"><i data-feather="menu"></i></button>
+        </div>
+        <div class="header-right">
+            <button class="btn-login" id="loginBtn"><i data-feather="log-in"></i><span>Login</span></button>
+        </div>
+    </header>
+
     <div class="container">
         <h1>
             👥 Manajemen User Lokal
             <span id="userBadge" class="user-badge" style="display:none;"></span>
-            <button id="loginBtn" class="btn-login">Login Google</button>
         </h1>
 
         <!-- Tampilan jika belum login -->
         <div id="loginSection">
             <p style="margin-bottom:20px;">Silakan login dengan akun Google (admin) untuk mengelola user lokal.</p>
             <button id="loginBtnLarge" class="btn-login" style="width:auto; padding:12px 24px;">🔐 Login dengan Google</button>
-            <div id="loginError" class="error-message" style="margin-top:15px;"></div>
         </div>
 
-        <!-- Tampilan utama setelah login sebagai admin -->
+        <!-- Tampilan utama setelah login -->
         <div id="mainApp">
-            <div class="warning-box">
-                ⚠️ User yang ditambahkan di sini akan disinkronkan ke IndexedDB untuk login lokal di perangkat kasir.
+            <div style="background:#f0f5f3; padding:12px; border-radius:15px; margin-bottom:20px;">
+                <i data-feather="info" style="width:16px; height:16px; vertical-align:middle;"></i>
+                <span style="margin-left:5px;">User yang dibuat di sini akan disimpan di Firestore dan dapat digunakan untuk login lokal setelah disinkronkan via halaman Sync Users.</span>
             </div>
+
             <!-- Form Tambah User -->
             <form id="addUserForm">
                 <div class="form-group">
@@ -72,7 +102,7 @@
                     </select>
                 </div>
                 <div id="formError" class="error-message"></div>
-                <button type="submit">Tambah User</button>
+                <button type="submit"><i data-feather="user-plus"></i> Tambah User</button>
             </form>
 
             <hr>
@@ -113,30 +143,26 @@
         </div>
     </div>
 
-    <script type="module">
-        // Konfigurasi Firebase (sama dengan app utama)
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { 
-            getFirestore, collection, doc, setDoc, getDocs, deleteDoc, 
-            query, orderBy, onSnapshot, serverTimestamp, where 
-        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-        import { 
-            getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged 
-        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDVty30S6y_qc1eMs3kVctcIpLt6Suw4dA",
-            authDomain: "mudapos-e8a4a.firebaseapp.com",
-            projectId: "mudapos-e8a4a",
-            storageBucket: "mudapos-e8a4a.firebasestorage.app",
-            messagingSenderId: "864215339664",
-            appId: "1:864215339664:web:1a97898b85ca3c1cb3be15"
+    <script>
+        window.cancelEdit = function() {
+            document.getElementById('editFormContainer').style.display = 'none';
         };
+    </script>
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        const provider = new GoogleAuthProvider();
+    <!-- Script Module Utama -->
+    <script type="module">
+        // ========== IMPOR MODUL ==========
+        import { auth, dbCloud, provider, signInWithPopup, signOut, onAuthStateChanged } from './js/firebase-config.js';
+        import { initAuth, checkPageAccess, logoutUser } from './js/auth-guard.js';
+        import { renderSidebar } from './js/sidebar.js';
+        
+        import { 
+            collection, doc, setDoc, getDocs, deleteDoc, 
+            query, orderBy, onSnapshot, serverTimestamp 
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        // ========== INISIALISASI ==========
+        feather.replace();
 
         // UI Elements
         const loginSection = document.getElementById('loginSection');
@@ -145,12 +171,14 @@
         const loginBtn = document.getElementById('loginBtn');
         const loginBtnLarge = document.getElementById('loginBtnLarge');
         const formError = document.getElementById('formError');
-        const loginError = document.getElementById('loginError');
+        const addUserForm = document.getElementById('addUserForm');
+        const userListDiv = document.getElementById('userList');
+        const editFormContainer = document.getElementById('editFormContainer');
+        const editUserForm = document.getElementById('editUserForm');
         
         // State
         let currentUser = null;
-        let isAdmin = false;
-        let usersCollection = collection(db, 'localUsers');
+        let usersCollection = collection(dbCloud, 'localUsers');
         let unsubscribe = null;
 
         // ========== HASH PASSWORD ==========
@@ -164,6 +192,7 @@
                     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
                 } catch (e) {}
             }
+            // Fallback
             let hash = 0;
             for (let i = 0; i < password.length; i++) {
                 const char = password.charCodeAt(i);
@@ -174,20 +203,14 @@
         }
 
         // ========== FUNGSI CRUD ==========
-        async function getAllUsers() {
-            const q = query(usersCollection, orderBy('createdAt', 'desc'));
-            const snapshot = await getDocs(q);
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        }
-
         async function addUser(user) {
             const docRef = doc(usersCollection, user.username);
             await setDoc(docRef, user);
         }
 
-        async function updateUser(user) {
-            const docRef = doc(usersCollection, user.username);
-            await setDoc(docRef, user, { merge: true });
+        async function updateUser(username, data) {
+            const docRef = doc(usersCollection, username);
+            await setDoc(docRef, data, { merge: true });
         }
 
         async function deleteUser(username) {
@@ -195,28 +218,27 @@
             await deleteDoc(docRef);
         }
 
-        // ========== UI FUNCTIONS ==========
-        function showError(element, message) {
-            element.textContent = message;
-            element.style.display = 'block';
-            setTimeout(() => element.style.display = 'none', 5000);
+        function showError(message) {
+            formError.textContent = message;
+            formError.style.display = 'block';
+            setTimeout(() => formError.style.display = 'none', 5000);
         }
 
-        async function renderUserList(users) {
-            const listDiv = document.getElementById('userList');
-            if (!users) users = await getAllUsers();
-            
+        // ========== RENDER USER LIST ==========
+        function renderUserList(users) {
             if (users.length === 0) {
-                listDiv.innerHTML = '<p style="text-align:center; color:#999;">Belum ada user.</p>';
+                userListDiv.innerHTML = '<p style="text-align:center; color:#999;">Belum ada user.</p>';
                 return;
             }
             let html = '';
             users.forEach(u => {
+                const roleClass = u.role === 'admin' ? 'admin' : 'kasir';
                 html += `
                     <div class="user-item">
                         <div class="user-info">
                             <strong>${u.name}</strong> (@${u.username})<br>
-                            Role: ${u.role} | Dibuat: ${u.createdAt ? new Date(u.createdAt.toDate()).toLocaleDateString() : '-'}
+                            Role: <span class="role-badge ${roleClass}">${u.role}</span> | 
+                            Dibuat: ${u.createdAt?.toDate?.()?.toLocaleDateString() || '-'}
                         </div>
                         <div class="user-actions">
                             <button class="edit" data-username="${u.username}">Edit</button>
@@ -225,7 +247,8 @@
                     </div>
                 `;
             });
-            listDiv.innerHTML = html;
+            userListDiv.innerHTML = html;
+            feather.replace();
             
             document.querySelectorAll('.edit').forEach(btn => {
                 btn.addEventListener('click', () => editUser(btn.dataset.username));
@@ -236,22 +259,18 @@
         }
 
         async function editUser(username) {
-            const users = await getAllUsers();
-            const user = users.find(u => u.username === username);
+            const users = await getDocs(query(usersCollection));
+            const user = users.docs.find(d => d.id === username)?.data();
             if (!user) return;
 
-            document.getElementById('editId').value = user.username;
-            document.getElementById('editUsername').value = user.username;
+            document.getElementById('editId').value = username;
+            document.getElementById('editUsername').value = username;
             document.getElementById('editName').value = user.name;
             document.getElementById('editRole').value = user.role;
             document.getElementById('editPassword').value = '';
 
-            document.getElementById('editFormContainer').style.display = 'block';
+            editFormContainer.style.display = 'block';
         }
-
-        window.cancelEdit = function() {
-            document.getElementById('editFormContainer').style.display = 'none';
-        };
 
         async function deleteUserPrompt(username) {
             if (confirm(`Yakin hapus user "${username}"?`)) {
@@ -263,46 +282,15 @@
             }
         }
 
-        // ========== AUTH & ROLE CHECK ==========
-        async function checkAdminRole(user) {
-            if (!user) return false;
-            try {
-                // Cek di koleksi users (Firestore) apakah user ini admin
-                const usersCol = collection(db, 'users');
-                const q = query(usersCol, where('email', '==', user.email));
-                const snapshot = await getDocs(q);
-                if (!snapshot.empty) {
-                    const data = snapshot.docs[0].data();
-                    return data.role === 'admin';
-                }
-                return false;
-            } catch (e) {
-                console.error(e);
-                return false;
-            }
-        }
-
-        async function updateUIForAuth(user) {
+        // ========== AUTH UI ==========
+        function updateUIForAuth(user) {
             currentUser = user;
             if (user) {
-                // Periksa apakah admin
-                isAdmin = await checkAdminRole(user);
-                if (!isAdmin) {
-                    // Tampilkan pesan error di login section
-                    loginSection.style.display = 'block';
-                    mainApp.style.display = 'none';
-                    userBadge.style.display = 'none';
-                    loginBtn.textContent = 'Login Google';
-                    showError(loginError, 'Anda bukan admin. Hanya admin yang dapat mengakses halaman ini.');
-                    await signOut(auth);
-                    return;
-                }
-
                 loginSection.style.display = 'none';
                 mainApp.style.display = 'block';
                 userBadge.style.display = 'flex';
                 userBadge.innerHTML = `👤 ${user.displayName || user.email} (Admin)`;
-                loginBtn.textContent = 'Logout';
+                loginBtn.innerHTML = '<i data-feather="log-out"></i><span>Logout</span>';
                 
                 // Mulai real-time listener
                 if (unsubscribe) unsubscribe();
@@ -312,50 +300,42 @@
                     renderUserList(users);
                 }, (error) => {
                     console.error('Listener error:', error);
-                    showError(formError, 'Gagal memuat data: ' + error.message);
+                    showError('Gagal memuat data: ' + error.message);
                 });
             } else {
                 loginSection.style.display = 'block';
                 mainApp.style.display = 'none';
                 userBadge.style.display = 'none';
-                loginBtn.textContent = 'Login Google';
+                loginBtn.innerHTML = '<i data-feather="log-in"></i><span>Login</span>';
                 if (unsubscribe) {
                     unsubscribe();
                     unsubscribe = null;
                 }
-                loginError.style.display = 'none';
             }
+            feather.replace();
         }
 
-        async function handleLogin() {
+        // ========== EVENT LISTENERS ==========
+        loginBtn.addEventListener('click', async () => {
+            if (currentUser) {
+                await logoutUser();
+            } else {
+                try {
+                    await signInWithPopup(auth, provider);
+                } catch (error) {
+                    alert('Login gagal: ' + error.message);
+                }
+            }
+        });
+        loginBtnLarge.addEventListener('click', async () => {
             try {
                 await signInWithPopup(auth, provider);
             } catch (error) {
                 alert('Login gagal: ' + error.message);
             }
-        }
-
-        async function handleLogout() {
-            try {
-                await signOut(auth);
-            } catch (error) {
-                alert('Logout gagal: ' + error.message);
-            }
-        }
-
-        // Event listeners
-        loginBtn.addEventListener('click', () => {
-            if (currentUser) handleLogout();
-            else handleLogin();
-        });
-        loginBtnLarge.addEventListener('click', handleLogin);
-
-        onAuthStateChanged(auth, (user) => {
-            updateUIForAuth(user);
         });
 
-        // ========== FORM SUBMIT ==========
-        document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+        addUserForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
@@ -363,7 +343,7 @@
             const role = document.getElementById('role').value;
 
             if (!username || !password || !name) {
-                showError(formError, 'Semua field harus diisi');
+                showError('Semua field harus diisi');
                 return;
             }
 
@@ -378,20 +358,18 @@
                     updatedAt: serverTimestamp()
                 };
                 await addUser(user);
-                document.getElementById('addUserForm').reset();
+                addUserForm.reset();
                 formError.style.display = 'none';
             } catch (error) {
-                if (error.code === 'already-exists') {
-                    showError(formError, 'Username sudah digunakan');
-                } else if (error.code === 'permission-denied') {
-                    showError(formError, 'Anda tidak memiliki izin menulis. Pastikan Firestore rules sudah diatur.');
+                if (error.code === 'permission-denied') {
+                    showError('Anda tidak memiliki izin. Pastikan Anda login sebagai admin dan Firestore Rules sudah diperbarui.');
                 } else {
-                    showError(formError, 'Gagal: ' + error.message);
+                    showError('Gagal: ' + error.message);
                 }
             }
         });
 
-        document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+        editUserForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const originalUsername = document.getElementById('editId').value;
             const newUsername = document.getElementById('editUsername').value.trim();
@@ -405,10 +383,6 @@
             }
 
             try {
-                const users = await getAllUsers();
-                const user = users.find(u => u.username === originalUsername);
-                if (!user) throw new Error('User tidak ditemukan');
-
                 const updatedData = {
                     username: newUsername,
                     name,
@@ -420,25 +394,45 @@
                 }
 
                 if (originalUsername !== newUsername) {
-                    // Hapus dokumen lama, buat baru
+                    // Hapus lama, buat baru
+                    const oldDoc = await getDocs(query(usersCollection));
+                    const oldUser = oldDoc.docs.find(d => d.id === originalUsername)?.data();
+                    if (!oldUser) throw new Error('User tidak ditemukan');
+                    
                     await deleteUser(originalUsername);
                     await addUser({ 
-                        ...user, 
+                        ...oldUser, 
                         ...updatedData, 
-                        createdAt: user.createdAt 
+                        createdAt: oldUser.createdAt || serverTimestamp()
                     });
                 } else {
-                    await updateUser({ ...user, ...updatedData });
+                    await updateUser(originalUsername, updatedData);
                 }
 
-                window.cancelEdit();
+                cancelEdit();
             } catch (error) {
                 alert('Gagal update: ' + error.message);
             }
         });
 
-        // Inisialisasi tampilan awal
-        updateUIForAuth(auth.currentUser);
+        // ========== INISIALISASI APLIKASI ==========
+        async function initializeApp() {
+            await initAuth();
+            if (!checkPageAccess()) return;
+            
+            renderSidebar({
+                containerId: 'sidebar',
+                overlayId: 'overlay',
+                menuToggleId: 'menuToggle',
+                closeSidebarId: 'closeSidebar'
+            });
+
+            onAuthStateChanged(auth, (user) => {
+                updateUIForAuth(user);
+            });
+        }
+
+        initializeApp().catch(console.error);
     </script>
 </body>
 </html>
