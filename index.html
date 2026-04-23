@@ -27,6 +27,7 @@
         .error-message { color:#dc3545; margin:10px 0; display:none; }
         #loginSection { text-align:center; padding:20px; }
         #mainApp { display:none; }
+        .warning-box { background:#fff3cd; border:1px solid #ffeeba; color:#856404; padding:12px; border-radius:10px; margin-bottom:20px; }
     </style>
 </head>
 <body>
@@ -39,12 +40,16 @@
 
         <!-- Tampilan jika belum login -->
         <div id="loginSection">
-            <p style="margin-bottom:20px;">Silakan login dengan akun Google (admin) untuk mengelola user.</p>
+            <p style="margin-bottom:20px;">Silakan login dengan akun Google (admin) untuk mengelola user lokal.</p>
             <button id="loginBtnLarge" class="btn-login" style="width:auto; padding:12px 24px;">🔐 Login dengan Google</button>
+            <div id="loginError" class="error-message" style="margin-top:15px;"></div>
         </div>
 
-        <!-- Tampilan utama setelah login -->
+        <!-- Tampilan utama setelah login sebagai admin -->
         <div id="mainApp">
+            <div class="warning-box">
+                ⚠️ User yang ditambahkan di sini akan disinkronkan ke IndexedDB untuk login lokal di perangkat kasir.
+            </div>
             <!-- Form Tambah User -->
             <form id="addUserForm">
                 <div class="form-group">
@@ -63,7 +68,7 @@
                     <label>Role</label>
                     <select id="role">
                         <option value="admin">Admin (Akses penuh)</option>
-                        <option value="viewer">Viewer (Hanya lihat)</option>
+                        <option value="kasir">Kasir (Hanya Sales)</option>
                     </select>
                 </div>
                 <div id="formError" class="error-message"></div>
@@ -96,7 +101,7 @@
                         <label>Role</label>
                         <select id="editRole">
                             <option value="admin">Admin</option>
-                            <option value="viewer">Viewer</option>
+                            <option value="kasir">Kasir</option>
                         </select>
                     </div>
                     <div style="display: flex; gap: 10px;">
@@ -109,18 +114,17 @@
     </div>
 
     <script type="module">
-        // Konfigurasi Firebase - GANTI DENGAN KONFIGURASI ANDA
+        // Konfigurasi Firebase (sama dengan app utama)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { 
             getFirestore, collection, doc, setDoc, getDocs, deleteDoc, 
-            query, orderBy, onSnapshot 
+            query, orderBy, onSnapshot, serverTimestamp, where 
         } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { 
             getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged 
         } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
-            // PASTIKAN KONFIGURASI SAMA DENGAN APP UTAMA
             apiKey: "AIzaSyDVty30S6y_qc1eMs3kVctcIpLt6Suw4dA",
             authDomain: "mudapos-e8a4a.firebaseapp.com",
             projectId: "mudapos-e8a4a",
@@ -141,9 +145,11 @@
         const loginBtn = document.getElementById('loginBtn');
         const loginBtnLarge = document.getElementById('loginBtnLarge');
         const formError = document.getElementById('formError');
+        const loginError = document.getElementById('loginError');
         
         // State
         let currentUser = null;
+        let isAdmin = false;
         let usersCollection = collection(db, 'localUsers');
         let unsubscribe = null;
 
@@ -190,10 +196,10 @@
         }
 
         // ========== UI FUNCTIONS ==========
-        function showError(message) {
-            formError.textContent = message;
-            formError.style.display = 'block';
-            setTimeout(() => formError.style.display = 'none', 5000);
+        function showError(element, message) {
+            element.textContent = message;
+            element.style.display = 'block';
+            setTimeout(() => element.style.display = 'none', 5000);
         }
 
         async function renderUserList(users) {
@@ -210,7 +216,7 @@
                     <div class="user-item">
                         <div class="user-info">
                             <strong>${u.name}</strong> (@${u.username})<br>
-                            Role: ${u.role} | Dibuat: ${u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}
+                            Role: ${u.role} | Dibuat: ${u.createdAt ? new Date(u.createdAt.toDate()).toLocaleDateString() : '-'}
                         </div>
                         <div class="user-actions">
                             <button class="edit" data-username="${u.username}">Edit</button>
@@ -257,14 +263,45 @@
             }
         }
 
-        // ========== AUTH ==========
-        function updateUIForAuth(user) {
+        // ========== AUTH & ROLE CHECK ==========
+        async function checkAdminRole(user) {
+            if (!user) return false;
+            try {
+                // Cek di koleksi users (Firestore) apakah user ini admin
+                const usersCol = collection(db, 'users');
+                const q = query(usersCol, where('email', '==', user.email));
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                    const data = snapshot.docs[0].data();
+                    return data.role === 'admin';
+                }
+                return false;
+            } catch (e) {
+                console.error(e);
+                return false;
+            }
+        }
+
+        async function updateUIForAuth(user) {
             currentUser = user;
             if (user) {
+                // Periksa apakah admin
+                isAdmin = await checkAdminRole(user);
+                if (!isAdmin) {
+                    // Tampilkan pesan error di login section
+                    loginSection.style.display = 'block';
+                    mainApp.style.display = 'none';
+                    userBadge.style.display = 'none';
+                    loginBtn.textContent = 'Login Google';
+                    showError(loginError, 'Anda bukan admin. Hanya admin yang dapat mengakses halaman ini.');
+                    await signOut(auth);
+                    return;
+                }
+
                 loginSection.style.display = 'none';
                 mainApp.style.display = 'block';
                 userBadge.style.display = 'flex';
-                userBadge.innerHTML = `👤 ${user.displayName || user.email}`;
+                userBadge.innerHTML = `👤 ${user.displayName || user.email} (Admin)`;
                 loginBtn.textContent = 'Logout';
                 
                 // Mulai real-time listener
@@ -275,7 +312,7 @@
                     renderUserList(users);
                 }, (error) => {
                     console.error('Listener error:', error);
-                    showError('Gagal memuat data: ' + error.message);
+                    showError(formError, 'Gagal memuat data: ' + error.message);
                 });
             } else {
                 loginSection.style.display = 'block';
@@ -286,6 +323,7 @@
                     unsubscribe();
                     unsubscribe = null;
                 }
+                loginError.style.display = 'none';
             }
         }
 
@@ -325,31 +363,30 @@
             const role = document.getElementById('role').value;
 
             if (!username || !password || !name) {
-                showError('Semua field harus diisi');
+                showError(formError, 'Semua field harus diisi');
                 return;
             }
 
             try {
                 const hashed = await hashPassword(password);
-                const now = new Date().toISOString();
                 const user = {
                     username,
                     password: hashed,
                     name,
                     role,
-                    createdAt: now,
-                    updatedAt: now
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
                 };
                 await addUser(user);
                 document.getElementById('addUserForm').reset();
                 formError.style.display = 'none';
             } catch (error) {
                 if (error.code === 'already-exists') {
-                    showError('Username sudah digunakan');
+                    showError(formError, 'Username sudah digunakan');
                 } else if (error.code === 'permission-denied') {
-                    showError('Anda tidak memiliki izin untuk menambah user. Pastikan Anda login sebagai admin.');
+                    showError(formError, 'Anda tidak memiliki izin menulis. Pastikan Firestore rules sudah diatur.');
                 } else {
-                    showError('Gagal: ' + error.message);
+                    showError(formError, 'Gagal: ' + error.message);
                 }
             }
         });
@@ -376,7 +413,7 @@
                     username: newUsername,
                     name,
                     role,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: serverTimestamp()
                 };
                 if (password.trim() !== '') {
                     updatedData.password = await hashPassword(password);
@@ -394,7 +431,7 @@
                     await updateUser({ ...user, ...updatedData });
                 }
 
-                cancelEdit();
+                window.cancelEdit();
             } catch (error) {
                 alert('Gagal update: ' + error.message);
             }
